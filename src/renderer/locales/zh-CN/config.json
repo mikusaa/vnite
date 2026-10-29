@@ -6,6 +6,19 @@
     "languageDescription": "选择应用程序的显示语言",
     "openAtLogin": "开机自启",
     "openAtLoginDescription": "在系统启动时自动打开应用程序",
+    "autoStartTitle": "开机自启",
+    "openAtLoginElevated": "以管理员身份启动",
+    "openAtLoginElevatedDescription": "首次开启时授权一次，之后登录自启、双击程序和游戏快捷方式均使用管理员权限，无需重复授权。与开机自启开关独立。",
+    "autoStartModeLoginItem": "当前以普通权限自启：以管理员身份运行的游戏（如原神）可能无法统计游戏时长。",
+    "autoStartCompatFlagConflict": "检测到程序被设置为「以管理员身份运行」，这种设置下 Windows 不会在登录时启动它。请改用上方的管理员自启，或在程序属性的兼容性设置中取消勾选「以管理员身份运行此程序」。",
+    "autoStartModeTask": "管理员模式已配置，后续启动通过已授权的任务执行，无需再次授权。",
+    "autoStartTaskStale": "管理员启动任务指向旧程序路径，请点击修复。",
+    "autoStartTaskMissing": "管理员启动任务不存在或配置异常，请点击修复。",
+    "autoStartTaskUnknown": "无法确认管理员自启状态，请检查 Windows 任务计划程序中的 Vnite-AutoStart 任务。",
+    "autoStartUnsupported": "管理员自启仅在 Windows 上可用。",
+    "autoStartUpdated": "开机自启设置已更新",
+    "autoStartCancelled": "已取消管理员授权，设置未生效",
+    "autoStartFailed": "设置开机自启失败：{{reason}}",
     "theme": "主题样式",
     "themeDescription": "选择应用程序的主题样式",
     "darkTheme": "暗色",
@@ -41,7 +54,10 @@
     "dayBoundaryHour": {
       "title": "日期分界时间",
       "description": "统计会在此时刻切分每天。设置为 4:00 时，0:00-3:59 会计入前一天。"
-    }
+    },
+    "autoStartRestartPending": "管理员模式已配置，将自动重启生效；计时、备份或其他写入完成后再切换。",
+    "autoStartCurrentAdmin": "当前实例仍以管理员权限运行；关闭程序后重新打开将使用普通权限。",
+    "autoStartRepair": "修复管理员启动"
   },
   "appearances": {
     "title": "外观",

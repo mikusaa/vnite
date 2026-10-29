@@ -1,5 +1,5 @@
 import { generateUUID } from '@appUtils'
-import { app, OpenDialogOptions } from 'electron'
+import { OpenDialogOptions } from 'electron'
 import { ConfigDBManager } from '~/core/database'
 import { ipcManager } from '~/core/ipc'
 import {
@@ -9,7 +9,7 @@ import {
   setupNativeMonitor,
   stopNativeMonitor
 } from '~/features/monitor'
-import { mainWindow } from '~/index'
+import { mainWindow, restartApplication } from '~/index'
 import {
   checkAdminPermissions,
   checkIfDirectoryNeedsAdminRights,
@@ -31,10 +31,12 @@ import {
   createGameShortcut,
   getAppLogContentsInCurrentLifetime,
   getAppRootPath,
+  getAutoStartStatus,
   getLanguage,
   getSystemFonts,
   openLogPathInExplorer,
   portableStore,
+  setAutoStart,
   switchDatabaseMode,
   testUpscalerAvailability,
   updateLanguage,
@@ -74,8 +76,7 @@ export function setupSystemIPC(): void {
   })
 
   ipcManager.on('app:relaunch-app', () => {
-    app.relaunch()
-    app.exit()
+    void restartApplication()
   })
 
   ipcManager.handle('utils:generate-uuid', () => {
@@ -171,6 +172,14 @@ export function setupSystemIPC(): void {
 
   ipcManager.handle('system:check-admin-permissions', async () => {
     return await checkAdminPermissions()
+  })
+
+  ipcManager.handle('system:get-autostart-status', async () => {
+    return await getAutoStartStatus()
+  })
+
+  ipcManager.handle('system:set-autostart', async (_, options) => {
+    return await setAutoStart(options)
   })
 
   ipcManager.handle('system:check-if-portable-directory-needs-admin-rights', async () => {

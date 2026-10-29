@@ -19,6 +19,9 @@ type InFlightGameSaveOperation =
     }
 
 const inFlightGameSaveOperations: Record<string, InFlightGameSaveOperation | undefined> = {}
+export function hasPendingGameSaveOperations(): boolean {
+  return Object.values(inFlightGameSaveOperations).some(Boolean)
+}
 const BACKUP_BLOCKED_BY_RESTORE_ERROR = 'Abort backup: restore is in progress.'
 const RESTORE_BLOCKED_BY_BACKUP_ERROR = 'Abort restore: backup is in progress.'
 const RESTORE_BLOCKED_BY_RESTORE_ERROR = 'Abort restore: restore is already in progress.'

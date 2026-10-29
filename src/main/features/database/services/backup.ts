@@ -6,7 +6,13 @@ import fse from 'fs-extra'
 import log from 'electron-log/main'
 import { eventBus } from '~/core/events'
 
+let activeOperations = 0
+export function isDatabaseOperationRunning(): boolean {
+  return activeOperations > 0
+}
+
 export async function backupDatabase(targetPath: string, exclude?: string[]): Promise<void> {
+  activeOperations++
   try {
     const dataPath = getDataPath()
     // Stop all database operations before backup
@@ -24,10 +30,13 @@ export async function backupDatabase(targetPath: string, exclude?: string[]): Pr
   } catch (error) {
     log.error('[DB] Error backing up database:', error)
     throw error
+  } finally {
+    activeOperations--
   }
 }
 
 export async function restoreDatabase(sourcePath: string): Promise<void> {
+  activeOperations++
   try {
     const dataPath = getDataPath()
     // Stop all database operations before restore
@@ -41,5 +50,7 @@ export async function restoreDatabase(sourcePath: string): Promise<void> {
   } catch (error) {
     log.error('[DB] Error restoring database:', error)
     throw error
+  } finally {
+    activeOperations--
   }
 }

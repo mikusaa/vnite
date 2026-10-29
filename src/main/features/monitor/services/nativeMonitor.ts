@@ -2,7 +2,7 @@ import * as native from 'vnite-native'
 import log from 'electron-log/main.js'
 import { eventBus } from '~/core/events'
 import { GameDBManager, ConfigDBManager } from '~/core/database'
-import { GameMonitor } from './monitor'
+import { GameMonitor, hasPendingGameExitOperations } from './monitor'
 import { ipcManager } from '~/core/ipc'
 import { Mutex } from 'async-mutex'
 import { GameTimerStatus, TimerStatus, gameLocalDoc } from '@appTypes/models'
@@ -12,6 +12,10 @@ import { GameTimerStatus, TimerStatus, gameLocalDoc } from '@appTypes/models'
 // When a known process is terminated, it is designed to be removed from this hash map.
 const monitors: Map<string, GameMonitor> = new Map()
 const mutex: Mutex = new Mutex()
+
+export function hasActiveGameMonitors(): boolean {
+  return monitors.size > 0 || hasPendingGameExitOperations()
+}
 
 // The TypeScript configuration "isolatedModules" is enabled, which prohibits the use
 // of enum values directly. This const mirrors `native.Process.ProcessEventType`.

@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import { pluginManager, pluginRegistryManager, PluginUtils } from './index'
 import { eventBus } from '~/core/events'
 import {
@@ -300,8 +299,3 @@ export class PluginService {
 }
 
 export const pluginService = PluginService.getInstance()
-
-// Clean up plugin system when application exits
-app.on('before-quit', async () => {
-  await pluginService.shutdown()
-})

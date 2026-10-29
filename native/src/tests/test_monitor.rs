@@ -7,7 +7,7 @@ async fn test_monitor() {
     vec![r"c:\program files\cmake\bin\cmake-gui.exe".to_string()], 
     vec!["123456-abcdef".to_string()],
     None
-  ).await;
+  ).await.expect("native monitor should start");
   tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
   let is_running = monitor::gm::get().lock().await.is_running("C:\\Program Files\\CMake\\bin".to_string(), Some(true));
   println!("is running: {}", is_running);
@@ -20,7 +20,7 @@ async fn test_foreground_hook() {
     vec![r"c:\program files\cmake\bin\cmake-gui.exe".to_string()], 
     vec!["123456-abcdef".to_string()],
     None
-  ).await;
+  ).await.expect("native monitor should start");
   foreground::install_hook(None, None).await;
 
   tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;

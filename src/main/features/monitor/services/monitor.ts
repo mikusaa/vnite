@@ -13,6 +13,11 @@ import { updateRecentGamesInTray } from '~/features/system'
 import { psManager, simulateHotkey, toPowerShellStringLiteral } from '~/utils'
 import { removeMonitorStub } from './nativeMonitor'
 
+let pendingGameExitOperations = 0
+export function hasPendingGameExitOperations(): boolean {
+  return pendingGameExitOperations > 0
+}
+
 async function getProcessList(): Promise<
   Array<{
     name: string
@@ -572,6 +577,7 @@ export class GameMonitor {
     }
 
     this.exiting = true
+    pendingGameExitOperations++
     let playTime = 0
 
     try {
@@ -689,6 +695,7 @@ export class GameMonitor {
         await backupGameSave(this.options.gameId)
       }
     } finally {
+      pendingGameExitOperations--
       // Stop monitoring
       this.stop()
 

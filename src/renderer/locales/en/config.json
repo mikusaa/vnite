@@ -6,6 +6,19 @@
     "languageDescription": "Choose the display language for the application",
     "openAtLogin": "Open at Login",
     "openAtLoginDescription": "Automatically open application when system starts",
+    "autoStartTitle": "Startup",
+    "openAtLoginElevated": "Start as administrator",
+    "openAtLoginElevatedDescription": "Authorize once when enabling. Login, double-click and game shortcut launches then use administrator privileges without further prompts. Independent of open at login.",
+    "autoStartModeLoginItem": "Starting with normal privileges: games that run as administrator (for example Genshin Impact) may not have their play time tracked.",
+    "autoStartCompatFlagConflict": "This executable is flagged to \"Run as administrator\", and Windows will not start such programs at logon. Use the administrator auto start above, or clear \"Run this program as an administrator\" in the Compatibility properties.",
+    "autoStartModeTask": "Administrator mode is configured. Future launches use the authorized tasks without another prompt.",
+    "autoStartTaskStale": "An administrator startup task points to an old executable. Click Repair to update it.",
+    "autoStartTaskMissing": "An administrator startup task is missing or invalid. Click Repair to restore it.",
+    "autoStartTaskUnknown": "Unable to verify the administrator auto start state. Check the Vnite-AutoStart task in Windows Task Scheduler.",
+    "autoStartUnsupported": "Administrator auto start is only available on Windows.",
+    "autoStartUpdated": "Startup settings updated",
+    "autoStartCancelled": "Administrator authorization was cancelled, nothing changed",
+    "autoStartFailed": "Failed to update startup settings: {{reason}}",
     "theme": "Theme Style",
     "themeDescription": "Choose the theme style for the application",
     "darkTheme": "Dark",
@@ -41,7 +54,10 @@
     "dayBoundaryHour": {
       "title": "Day Boundary",
       "description": "Daily stats are split at this time. If set to 4:00, 0:00-3:59 counts as the previous day."
-    }
+    },
+    "autoStartRestartPending": "Administrator mode is configured. Vnite will restart automatically after timers, backups and pending writes finish.",
+    "autoStartCurrentAdmin": "This instance still runs as administrator. Exit and open Vnite again to use normal privileges.",
+    "autoStartRepair": "Repair administrator startup"
   },
   "appearances": {
     "title": "Appearances",

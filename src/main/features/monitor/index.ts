@@ -5,6 +5,7 @@ export {
   startPhantomMonitor,
   enableForegroundHook,
   disableForegroundHook,
-  changeForegroundWaitTime
+  changeForegroundWaitTime,
+  hasActiveGameMonitors
 } from './services/nativeMonitor'
 export { setupNativeMonitorIPC } from './ipc'

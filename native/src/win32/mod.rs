@@ -3,6 +3,7 @@ mod notification;
 mod nt_path;
 mod privilege;
 mod process;
+pub mod autostart;
 
 use crate::{log, napi_win32::ProcessInfo};
 

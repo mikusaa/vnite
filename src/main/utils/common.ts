@@ -1,19 +1,14 @@
-import { exec } from 'child_process'
 import { format, isValid, parse, parseISO } from 'date-fns'
 import { enUS, zhCN } from 'date-fns/locale'
 import { app, net, shell } from 'electron'
 import log from 'electron-log/main'
 import { fileTypeFromBuffer } from 'file-type'
 import fse from 'fs-extra'
-import koffi from 'koffi'
 import path from 'path'
 import pngToIco from 'png-to-ico'
 import sharp from 'sharp'
-import { promisify } from 'util'
-import { getAppTempPath, getDataPath } from '~/features/system'
+import { getAppTempPath, getDataPath, isProcessElevated } from '~/features/system'
 import { psManager, toPowerShellStringLiteral } from './powershell'
-
-const execAsync = promisify(exec)
 
 export async function createOfficialRemoteDBWithPermissions(
   remoteUrl: string,
@@ -130,45 +125,11 @@ export async function getDirSize(dirPath: string): Promise<number> {
   return size
 }
 
-export function restartAppAsAdmin(): void {
-  try {
-    const shell32 = koffi.load('shell32.dll')
-    const ShellExecuteA = shell32.func(
-      'int ShellExecuteA(void*, const char*, const char*, const char*, const char*, int)'
-    )
-
-    const appPath = app.getPath('exe')
-
-    // Get all command line arguments (except executable paths)
-    const args = process.argv.slice(1)
-    // Splices all parameters into a single string, preserving the original formatting
-    const cmdArgs = args
-      .map((arg) => {
-        // Quoting parameters containing spaces or special characters
-        return arg.includes(' ') || arg.includes('"') ? `"${arg.replace(/"/g, '\\"')}"` : arg
-      })
-      .join(' ')
-
-    console.log('Restart the application with administrator privileges, parameter.', cmdArgs)
-    // Use ShellExecuteA to start the application with administrator privileges and pass the full parameters
-    const result = ShellExecuteA(null, 'runas', appPath, cmdArgs, '', 1)
-    if (result > 32) {
-      console.log(
-        'Administrator privilege request successfully initiated, about to exit current instance'
-      )
-      setTimeout(() => app.exit(0), 100)
-    } else {
-      console.error('ShellExecute call failed with return code:', result)
-    }
-  } catch (error) {
-    console.error('Failed to call ShellExecuteA with koffi:', error)
-  }
-}
-
 export async function checkIfDirectoryNeedsAdminRights(directoryPath: string): Promise<boolean> {
   const testFilePath = path.join(directoryPath, '.permission_test_' + Date.now())
 
   try {
+    await fse.ensureDir(directoryPath)
     // Try to create a test file
     await fse.writeFile(testFilePath, 'test')
     // If successful, clean up and return false (admin privileges not required)
@@ -181,9 +142,8 @@ export async function checkIfDirectoryNeedsAdminRights(directoryPath: string): P
         return true
       }
     }
-    // Other errors (like directory doesn't exist)
-    console.error('Error checking directory permissions:', error)
-    return true // If in doubt, assume admin privileges are needed
+    // Missing directories can be created; disk/IO errors cannot be fixed by UAC.
+    throw error
   }
 }
 
@@ -191,13 +151,8 @@ export async function checkAdminPermissions(): Promise<boolean> {
   if (process.platform !== 'win32') {
     return false // Non-Windows platforms return false
   }
-  try {
-    await execAsync('net session')
-    return true // The command was successfully executed with administrator privileges
-  } catch (_error) {
-    // Command execution failed, no administrator privileges
-    return false
-  }
+
+  return isProcessElevated()
 }
 
 export function parseGameIdFromUrl(url: string): string | null {

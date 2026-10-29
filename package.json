@@ -15,6 +15,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
+    "test:startup": "pnpm --filter vnite-native exec node --import tsx --test ../tests/startup-state.test.ts ../tests/startup-routing.test.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build:native": "pnpm --filter vnite-native run build",

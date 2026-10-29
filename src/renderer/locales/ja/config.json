@@ -6,6 +6,19 @@
     "languageDescription": "アプリケーションの表示言語を選択",
     "openAtLogin": "起動時に開く",
     "openAtLoginDescription": "システム起動時に自動的にアプリケーションを開く",
+    "autoStartTitle": "自動起動",
+    "openAtLoginElevated": "管理者として起動",
+    "openAtLoginElevatedDescription": "初回の有効化時に一度承認すると、ログオン、ダブルクリック、ゲームのショートカットから管理者として起動します。自動起動とは独立した設定です。",
+    "autoStartModeLoginItem": "現在は通常権限で自動起動しています。管理者として実行されるゲーム（原神など）のプレイ時間が記録されない場合があります。",
+    "autoStartCompatFlagConflict": "この実行ファイルは「管理者として実行」に設定されています。この設定では Windows はログオン時に起動しません。上記の管理者自動起動を使用するか、プログラムのプロパティの互換性で「管理者としてこのプログラムを実行する」のチェックを外してください。",
+    "autoStartModeTask": "管理者モードを設定済みです。以降は承認済みタスクから起動します。",
+    "autoStartTaskStale": "管理者起動タスクが古いパスを参照しています。修復してください。",
+    "autoStartTaskMissing": "管理者起動タスクが存在しないか無効です。修復してください。",
+    "autoStartTaskUnknown": "管理者自動起動の状態を確認できません。Windows タスクスケジューラの Vnite-AutoStart タスクを確認してください。",
+    "autoStartUnsupported": "管理者自動起動は Windows でのみ利用できます。",
+    "autoStartUpdated": "自動起動の設定を更新しました",
+    "autoStartCancelled": "管理者の承認がキャンセルされたため、設定は変更されていません",
+    "autoStartFailed": "自動起動の設定に失敗しました: {{reason}}",
     "theme": "テーマスタイル",
     "themeDescription": "アプリケーションのテーマスタイルを選択",
     "darkTheme": "ダーク",
@@ -41,7 +54,10 @@
     "dayBoundaryHour": {
       "title": "日付の区切り時刻",
       "description": "統計はこの時刻で1日を区切ります。4:00に設定すると、0:00-3:59は前日として集計されます。"
-    }
+    },
+    "autoStartRestartPending": "設定済みです。計測、バックアップ、書き込みの完了後に自動的に再起動します。",
+    "autoStartCurrentAdmin": "現在のプロセスは管理者として実行中です。終了して開き直すと通常の権限になります。",
+    "autoStartRepair": "管理者起動を修復"
   },
   "appearances": {
     "title": "外観",

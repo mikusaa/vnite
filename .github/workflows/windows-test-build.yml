@@ -1,0 +1,95 @@
+name: Windows test build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/native-admin-startup
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-test-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 installer
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows native module
+        run: pnpm build:native
+
+      - name: Test native startup contracts
+        run: cargo test --manifest-path native/Cargo.toml win32::autostart::tests
+
+      - name: Test startup coordination
+        run: pnpm test:startup
+
+      - name: Check TypeScript
+        run: pnpm typecheck
+
+      - name: Build application
+        run: pnpm exec electron-vite build
+
+      - name: Build test installer
+        run: |
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          pnpm exec electron-builder --win nsis --x64 --publish never "-c.nsis.artifactName=vnite-admin-startup-$shortSha-setup.exe"
+
+      - name: Generate checksums
+        run: |
+          Get-ChildItem dist/*.exe |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $_.Path -Leaf) } |
+            Set-Content dist/SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload Windows installer
+        id: installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vnite-windows-x64-admin-startup-${{ github.run_number }}
+          path: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Add download link to summary
+        env:
+          ARTIFACT_URL: ${{ steps.installer.outputs.artifact-url }}
+        run: |
+          @"
+          ## Windows test installer
+          - Commit: ``$env:GITHUB_SHA``
+          - Architecture: Windows x64
+          - [Download installer and SHA-256 checksums]($env:ARTIFACT_URL)
+          - Retention: 14 days
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

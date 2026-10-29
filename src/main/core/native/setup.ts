@@ -36,12 +36,15 @@ export async function setupNativeModule(): Promise<void> {
     }
   } catch (err) {
     log.error('failed to setup native process monitor', err)
+    throw err
   }
 }
 
 // Send a termination signal to the native module to shut it down gracefully
 export async function nativeCleanup(): Promise<void> {
-  await disableForegroundHook()
-  await stopNativeMonitor()
+  const results = await Promise.allSettled([disableForegroundHook(), stopNativeMonitor()])
+  for (const result of results) {
+    if (result.status === 'rejected') log.warn('[Native] Cleanup failed:', result.reason)
+  }
   native.stopLogger()
 }

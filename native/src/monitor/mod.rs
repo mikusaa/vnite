@@ -39,7 +39,7 @@ pub async fn start_monitoring(
   local_game_pathes: Vec<String>,
   local_game_ids: Vec<String>,
   callback: Option<NapiWeakThreadsafeFunction<ProcessEvent, ()>>,
-) {
+) -> windows_core::Result<()> {
   let mut guard_monitor = PROCESS_MONITOR.lock().await;
 
   // stop monitoring if already existed
@@ -67,7 +67,7 @@ pub async fn start_monitoring(
   let result = monitor.start_monitoring();
   if result.is_err() {
     log::error("failed to start native monitor");
-    return;
+    return result;
   }
 
   *guard_monitor = Some(monitor);
@@ -81,6 +81,7 @@ pub async fn start_monitoring(
       startup_process_check().await;
     });
   }
+  Ok(())
 }
 
 pub async fn stop_monitoring() {

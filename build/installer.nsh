@@ -10,6 +10,14 @@
 !macroend
 
 !macro customRemoveFiles
+  ${ifNot} ${isUpdated}
+    DetailPrint "Removing Vnite administrator startup tasks"
+    ExecWait '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --vnite-startup-uninstall' $R0
+    StrCmp $R0 0 startup_cleanup_done
+      MessageBox MB_ICONEXCLAMATION|MB_OK "Could not remove Vnite startup tasks. Please close Vnite and retry uninstalling."
+      Abort
+    startup_cleanup_done:
+  ${endif}
   DeleteRegKey HKCR "vnite"
   Push $R1
   Push $R2

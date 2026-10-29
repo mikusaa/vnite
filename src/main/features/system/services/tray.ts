@@ -1,9 +1,11 @@
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron'
 import i18next from 'i18next'
+import log from 'electron-log/main'
 import { ConfigDBManager, GameDBManager } from '~/core/database'
 import { eventBus } from '~/core/events'
 import { convertToPng } from '~/utils'
 import icon from '../../../../../resources/icon.ico?asset'
+import { getAutoStartStatus, setAutoStart } from './autostart'
 
 export interface AppConfig {
   openAtLogin: boolean
@@ -58,6 +60,7 @@ export class TrayManager {
 
   public async updateConfig(): Promise<void> {
     this.config = await ConfigDBManager.getConfigValue('general')
+    this.config.openAtLogin = (await getAutoStartStatus()).openAtLogin
     this.updateTrayMenu()
   }
 
@@ -89,6 +92,7 @@ export class TrayManager {
   private async setTrayMenu(): Promise<void> {
     if (!this.tray) return
 
+    const startup = await getAutoStartStatus()
     const recentGames = await this.getRecentGames()
     const template: Array<Electron.MenuItemConstructorOptions> = []
 
@@ -122,13 +126,18 @@ export class TrayManager {
           {
             label: i18next.t('tray:openAtLogin'),
             type: 'checkbox',
-            checked: this.config?.openAtLogin,
+            checked: startup.openAtLogin,
             click: async (menuItem): Promise<void> => {
-              await ConfigDBManager.setConfigValue('general.openAtLogin', menuItem.checked)
-              app.setLoginItemSettings({
+              const result = await setAutoStart({
                 openAtLogin: menuItem.checked,
-                args: ['--hidden']
+                runAsAdmin: startup.runAsAdmin
               })
+
+              if (!result.ok) {
+                log.error('[Tray] Failed to update open at login:', result.error)
+              }
+
+              await this.updateConfig()
             }
           },
           {

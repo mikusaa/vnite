@@ -1,6 +1,6 @@
 import { getUpscalerBackendByPath } from '@appTypes/utils'
 import { sanitizeFilenameComponent } from '@appUtils'
-import { app, nativeImage } from 'electron'
+import { nativeImage } from 'electron'
 import contextMenu from 'electron-context-menu'
 import log from 'electron-log/main'
 import fse from 'fs-extra'
@@ -15,6 +15,7 @@ import {
 } from '~/utils'
 import icon from '../../../../../resources/icon.png?asset'
 import { getAppTempPath, getLogsPath } from './path'
+import { getAutoStartStatus, setAutoStart } from './autostart'
 
 export async function setupContextMenu(): Promise<void> {
   contextMenu({
@@ -52,18 +53,6 @@ export async function setupContextMenu(): Promise<void> {
       services: i18next.t('context-menu:services')
     }
   })
-}
-
-export async function setupOpenAtLogin(): Promise<void> {
-  try {
-    const isEnabled = await ConfigDBManager.getConfigValue('general.openAtLogin')
-    app.setLoginItemSettings({
-      openAtLogin: isEnabled,
-      args: ['--hidden']
-    })
-  } catch (error) {
-    log.error('[Utils] Error toggling open at login:', error)
-  }
 }
 
 export async function getAppLogContentsInCurrentLifetime(): Promise<string> {
@@ -128,11 +117,12 @@ export async function openLogPathInExplorer(): Promise<void> {
 
 export async function updateOpenAtLogin(): Promise<void> {
   try {
-    const isEnabled = await ConfigDBManager.getConfigValue('general.openAtLogin')
-    app.setLoginItemSettings({
-      openAtLogin: isEnabled,
-      args: ['--hidden']
-    })
+    const { openAtLogin, runAsAdmin } = await getAutoStartStatus()
+
+    const result = await setAutoStart({ openAtLogin, runAsAdmin })
+    if (!result.ok) {
+      log.error('[Utils] Error setting open at login:', result.error)
+    }
   } catch (error) {
     log.error('[Utils] Error setting open at login:', error)
   }

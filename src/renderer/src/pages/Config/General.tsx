@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@ui/card'
 import {
@@ -10,6 +12,8 @@ import {
   SelectTrigger,
   SelectValue
 } from '@ui/select'
+import { Switch } from '@ui/switch'
+import { Button } from '@ui/button'
 
 import { eventBus } from '~/app/events'
 import { ipcManager } from '~/app/ipc'
@@ -19,6 +23,7 @@ import { useTheme } from '~/components/ThemeProvider'
 import { useConfigState } from '~/hooks'
 import { useRunningGames } from '~/pages/Library/store'
 import { cn } from '~/utils'
+import type { AutoStartStatus } from '@appTypes/autostart'
 
 export function General(): React.JSX.Element {
   const { themeSetting, setThemeSetting } = useTheme()
@@ -26,6 +31,92 @@ export function General(): React.JSX.Element {
   const { i18n } = useTranslation()
   const [enableForegroundTimer] = useConfigState('general.enableForegroundTimer')
   const { runningGames } = useRunningGames.getState()
+
+  const [autoStartStatus, setAutoStartStatus] = useState<AutoStartStatus | null>(null)
+  const [autoStartPending, setAutoStartPending] = useState(false)
+
+  const isWindows = window.electron.process.platform === 'win32'
+  const openAtLogin = autoStartStatus?.openAtLogin ?? false
+  const runAsAdmin = autoStartStatus?.runAsAdmin ?? false
+
+  useEffect(() => {
+    const refresh = (): void => {
+      ipcManager
+        .invoke('system:get-autostart-status')
+        .then((status) => setAutoStartStatus(status))
+        .catch((error) => console.error('Failed to read auto start status:', error))
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [isWindows])
+
+  // Never persist the preference unless the operating system actually applied it.
+  const applyAutoStart = async (nextOpenAtLogin: boolean, nextElevated: boolean): Promise<void> => {
+    setAutoStartPending(true)
+    try {
+      const result = await ipcManager.invoke('system:set-autostart', {
+        openAtLogin: nextOpenAtLogin,
+        runAsAdmin: nextElevated
+      })
+
+      setAutoStartStatus(result.status)
+
+      if (result.ok) {
+        eventBus.emit('tray:config-updated', undefined, { source: 'openAtLogin' })
+        toast.success(
+          t(
+            result.status.restartPending
+              ? 'general.autoStartRestartPending'
+              : 'general.autoStartUpdated'
+          )
+        )
+      } else {
+        toast.error(
+          result.cancelled
+            ? t('general.autoStartCancelled')
+            : t('general.autoStartFailed', { reason: result.error ?? '' })
+        )
+      }
+    } catch (error) {
+      toast.error(t('general.autoStartFailed', { reason: String(error) }))
+    } finally {
+      setAutoStartPending(false)
+    }
+  }
+
+  const autoStartHint = ((): string => {
+    if (!isWindows) return t('general.autoStartUnsupported')
+    if (autoStartStatus?.lastError) return autoStartStatus.lastError
+    if (autoStartStatus?.restartPending) return t('general.autoStartRestartPending')
+    if (!runAsAdmin) {
+      if (autoStartStatus?.processElevated) return t('general.autoStartCurrentAdmin')
+      if (!openAtLogin) return ''
+      // A RUNASADMIN compatibility flag makes the login item channel unusable:
+      // Windows refuses to elevate startup items, so the app never starts.
+      return autoStartStatus?.runAsAdminFlag
+        ? t('general.autoStartCompatFlagConflict')
+        : t('general.autoStartModeLoginItem')
+    }
+
+    switch (autoStartStatus?.launchTask) {
+      case 'ok':
+        return autoStartStatus?.logonTask === 'ok'
+          ? t('general.autoStartModeTask')
+          : t('general.autoStartTaskMissing')
+      case 'stale-path':
+        return t('general.autoStartTaskStale')
+      case 'disabled':
+      case 'wrong-runlevel':
+      case 'wrong-principal':
+      case 'wrong-logon-type':
+      case 'invalid-settings':
+      case 'absent':
+        return t('general.autoStartTaskMissing')
+      default:
+        return t('general.autoStartTaskUnknown')
+    }
+  })()
 
   const languageOptions = [
     { value: 'zh-CN', label: '简体中文' },
@@ -48,23 +139,51 @@ export function General(): React.JSX.Element {
       <CardContent>
         <div className={cn('space-y-4')}>
           {/* Open at login */}
-          <ConfigItem
-            hookType="config"
-            path="general.openAtLogin"
-            title={t('general.openAtLogin')}
-            description={t('general.openAtLoginDescription')}
-            controlType="switch"
-            onChange={async (_checked: boolean) => {
-              try {
-                await ipcManager.invoke('utils:update-open-at-login')
-                eventBus.emit('tray:config-updated', undefined, {
-                  source: 'openAtLogin'
-                })
-              } catch (error) {
-                console.error('Failed to update settings:', error)
-              }
-            }}
-          />
+          <div className={cn('space-y-4')}>
+            <div className={cn('border-b pb-2')}>{t('general.autoStartTitle')}</div>
+
+            <ConfigItemPure
+              title={t('general.openAtLogin')}
+              description={t('general.openAtLoginDescription')}
+              disabled={autoStartPending || !autoStartStatus}
+            >
+              <Switch
+                checked={openAtLogin}
+                disabled={autoStartPending || !autoStartStatus}
+                onCheckedChange={(checked: boolean) => {
+                  void applyAutoStart(checked, runAsAdmin)
+                }}
+              />
+            </ConfigItemPure>
+
+            <ConfigItemPure
+              title={t('general.openAtLoginElevated')}
+              description={t('general.openAtLoginElevatedDescription')}
+              disabled={autoStartPending || !isWindows || !autoStartStatus}
+            >
+              <Switch
+                checked={runAsAdmin}
+                disabled={autoStartPending || !isWindows || !autoStartStatus}
+                onCheckedChange={(checked: boolean) => {
+                  void applyAutoStart(openAtLogin, checked)
+                }}
+              />
+            </ConfigItemPure>
+
+            {autoStartHint !== '' && (
+              <div className={cn('text-sm text-muted-foreground')}>{autoStartHint}</div>
+            )}
+            {runAsAdmin &&
+              (autoStartStatus?.launchTask !== 'ok' || autoStartStatus.logonTask !== 'ok') && (
+                <Button
+                  variant="outline"
+                  disabled={autoStartPending}
+                  onClick={() => void applyAutoStart(openAtLogin, runAsAdmin)}
+                >
+                  {t('general.autoStartRepair')}
+                </Button>
+              )}
+          </div>
 
           {/* Language */}
           <ConfigItem

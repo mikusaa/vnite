@@ -23,8 +23,10 @@ pub async fn start_monitoring(
   local_game_pathes: Vec<String>,
   local_game_ids: Vec<String>,
   callback: Option<ThreadsafeFunction<ProcessEvent, (), ProcessEvent, Status, true, true>>,
-) {
-  monitor::start_monitoring(local_game_pathes, local_game_ids, callback).await;
+) -> napi::Result<()> {
+  monitor::start_monitoring(local_game_pathes, local_game_ids, callback)
+    .await
+    .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
 
 #[napi(js_name = "stopMonitoring")]

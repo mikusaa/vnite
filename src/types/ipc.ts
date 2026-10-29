@@ -6,6 +6,7 @@ import {
   EventType
 } from '@appTypes/event'
 import { ReportExportRequest, ReportExportResponse } from '@appTypes/report'
+import type { AutoStartOptions, AutoStartResult, AutoStartStatus } from '@appTypes/autostart'
 import { BatchUpdateGameMetadataProgress, OverallScanProgress } from '@appTypes/utils'
 import { ProgressInfo, UpdateCheckResult } from 'electron-updater'
 import type { GameMediaType, LauncherPresetApplyResult } from './models'
@@ -94,6 +95,8 @@ type MainIpcEvents =
       'system:open-path-in-explorer': (filePath: string) => void
       'system:get-language': () => string
       'system:check-admin-permissions': () => boolean
+      'system:get-autostart-status': () => AutoStartStatus
+      'system:set-autostart': (options: AutoStartOptions) => AutoStartResult
       'system:check-if-portable-directory-needs-admin-rights': () => boolean
       'system:check-if-path-exist': (paths: string[]) => boolean[]
       'system:get-fonts': () => string[]

@@ -565,6 +565,8 @@ async function convertConfig(basePath: string): Promise<void> {
     // Convert the general configuration
     await ConfigDBManager.setConfigValue('general', {
       openAtLogin: v2Config.general.openAtLogin,
+      // 旧版本不存在管理员自启通道，迁移时统一退回普通自启。
+      openAtLoginElevated: false,
       quitToTray: v2Config.general.quitToTray,
       language: '',
       hideWindowAfterGameStart: true,
