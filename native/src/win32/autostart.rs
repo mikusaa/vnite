@@ -745,10 +745,18 @@ pub async fn configure_startup_tasks(
             }
           }
         }
-        if probe_one(&folder, &id, false, true)? != "ok"
-          || probe_one(&folder, &id, true, open_at_login)? != "ok"
-        {
-          return Err(invalid("registered startup tasks failed verification"));
+        let launch_state = probe_one(&folder, &id, false, true)?;
+        let logon_state = probe_one(&folder, &id, true, open_at_login)?;
+        if launch_state != "ok" || logon_state != "ok" {
+          let diagnostics = format!(
+            "registered startup tasks failed verification: Launch={launch_state}, Logon={logon_state}"
+          );
+          for (logon, enabled) in [(false, true), (true, open_at_login)] {
+            if let Ok(details) = task_diagnostics(&folder, &id, logon, enabled) {
+              crate::log::error(&details);
+            }
+          }
+          return Err(invalid(diagnostics));
         }
       } else {
         delete(&folder, &task_name(&id, "Logon"))?;
@@ -909,6 +917,33 @@ pub async fn remove_installation_startup_tasks() -> napi::Result<()> {
   .await
 }
 
+fn task_diagnostics(
+  folder: &ITaskFolder,
+  id: &StartupIdentity,
+  logon: bool,
+  enabled: bool,
+) -> Result<String> {
+  unsafe {
+    let name = task_name(id, if logon { "Logon" } else { "Launch" });
+    let task = folder.GetTask(&BSTR::from(name.as_str()))?;
+    let actual_xml = task.Xml()?.to_string();
+    let actual = xml_values(&actual_xml)?;
+    let expected = xml_values(&task_xml(id, logon, enabled))?;
+    let differences: Vec<_> = expected
+      .iter()
+      .filter(|(key, value)| {
+        !key.starts_with("Task/RegistrationInfo/") && actual.get(*key) != Some(*value)
+      })
+      .map(|(key, value)| format!("{key}: expected={value:?}, actual={:?}", actual.get(key)))
+      .collect();
+    let security = task.GetSecurityDescriptor(4)?.to_string();
+    Ok(format!(
+      "[AutoStart] {name}: XML differences={differences:?}; permissions_ok={}; security={security}; XML={actual_xml}",
+      task_permissions(&security, &id.sid)?
+    ))
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -976,5 +1011,52 @@ mod tests {
     );
     assert!(!task_permissions(&format!("D:(A;;GA;;;{sid})"), sid).unwrap());
     assert!(!task_permissions(&format!("D:(A;;GRGX;;;{sid})(A;;GA;;;WD)"), sid).unwrap());
+  }
+
+  #[test]
+  #[ignore = "registers temporary tasks in the real Windows Task Scheduler"]
+  fn registered_tasks_roundtrip() {
+    std::thread::spawn(|| -> Result<()> {
+      unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
+      }
+      let _apartment = ComApartment;
+      let mut id = identity()?;
+      if !id.elevated {
+        return Err(Error::new(
+          E_ACCESSDENIED,
+          "integration test requires an elevated Windows runner",
+        ));
+      }
+      id.installation_id = format!(
+        "integration-{}-{:x}",
+        std::process::id(),
+        std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .unwrap()
+          .as_nanos()
+      );
+      let folder = scheduler()?;
+      let before = snapshot(&folder, &id)?;
+      let result = (|| -> Result<()> {
+        for (logon, enabled) in [(false, true), (true, false), (true, true)] {
+          let kind = if logon { "Logon" } else { "Launch" };
+          register(&folder, &id, kind, &task_xml(&id, logon, enabled), None)?;
+          println!("{}", task_diagnostics(&folder, &id, logon, enabled)?);
+          let state = probe_one(&folder, &id, logon, enabled)?;
+          if state != "ok" {
+            return Err(invalid(format!(
+              "real {kind} task failed verification: {state}"
+            )));
+          }
+        }
+        Ok(())
+      })();
+      let cleanup = restore(&folder, &id, &before);
+      result.and(cleanup)
+    })
+    .join()
+    .expect("integration worker should not panic")
+    .expect("Windows task registration must round-trip");
   }
 }
