@@ -34,22 +34,34 @@ being committed; failed commits restore task XML, security and compatibility fla
 
 ## Automated checks
 
-```sh
-pnpm test:startup
-pnpm typecheck
-```
-
+Build the native package first so its generated TypeScript declarations exist.
 On Windows with the Rust MSVC toolchain:
 
 ```sh
+pnpm install --frozen-lockfile
 pnpm build:native
+pnpm test:startup
+pnpm typecheck
 cargo test --manifest-path native/Cargo.toml win32::autostart::tests
 pnpm build:win
 ```
 
+The GitHub Actions Windows workflow also runs a real registration/readback test
+on an elevated, disposable runner:
+
+```sh
+cargo test --manifest-path native/Cargo.toml registered_tasks_roundtrip -- --ignored --nocapture
+```
+
+That test creates uniquely named tasks, checks the on-demand task and both enabled
+and disabled logon tasks, and restores the previous state before returning.
+The validator accepts Windows omitting the schema-default `true` values for
+`Enabled` and `AllowStartOnDemand`; explicit disabling and incorrect battery,
+principal, run-level, action or security settings still fail verification.
+
 The JavaScript tests use mocked native operations for cancellation, task errors,
-rollback, routing, readiness, deduplication and deferred restarts. They do not
-replace the Windows checks below.
+rollback, routing, readiness, deduplication, deferred restarts and one-time migration.
+They do not replace the Windows checks below.
 
 ## Windows acceptance checks
 

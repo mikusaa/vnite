@@ -6,8 +6,8 @@ use windows::{
   core::{w, BSTR, PCWSTR, PWSTR},
   Win32::{
     Foundation::{
-      CloseHandle, LocalFree, ERROR_FILE_NOT_FOUND, E_ACCESSDENIED, E_INVALIDARG, GENERIC_EXECUTE,
-      GENERIC_READ, HANDLE, HLOCAL, WAIT_OBJECT_0,
+      CloseHandle, LocalFree, ERROR_FILE_NOT_FOUND, ERROR_NONE_MAPPED, E_ACCESSDENIED,
+      E_INVALIDARG, GENERIC_EXECUTE, GENERIC_READ, HANDLE, HLOCAL, WAIT_OBJECT_0,
     },
     Security::{
       Authorization::{
@@ -75,8 +75,6 @@ pub struct StartupTaskSnapshot {
   pub logon_security: Option<String>,
   pub user_compat: Option<String>,
   pub machine_compat: Option<String>,
-  pub legacy_xml: Option<String>,
-  pub legacy_security: Option<String>,
 }
 
 #[napi(object)]
@@ -341,7 +339,7 @@ fn same_account(value: &str, expected_sid: &str) -> Result<bool> {
     );
     if sid_size == 0 {
       return match result {
-        Err(error) if error.code() == HRESULT::from_win32(1332) => Ok(false),
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_NONE_MAPPED.0) => Ok(false),
         Err(error) => Err(error),
         Ok(()) => Ok(false),
       };
@@ -615,16 +613,6 @@ fn snapshot(folder: &ITaskFolder, id: &StartupIdentity) -> Result<StartupTaskSna
   };
   let (launch_xml, launch_security) = one(&task_name(id, "Launch"))?;
   let (logon_xml, logon_security) = one(&task_name(id, "Logon"))?;
-  let (mut legacy_xml, mut legacy_security) = one(&format!("Vnite-AutoStart-{}", id.sid))?;
-  if let Some(xml) = &legacy_xml {
-    if !xml_values(xml)?
-      .get("Task/Actions/Exec/Command")
-      .is_some_and(|exe| normalize_path(exe) == normalize_path(&id.exe_path))
-    {
-      legacy_xml = None;
-      legacy_security = None;
-    }
-  }
   Ok(StartupTaskSnapshot {
     launch_xml,
     launch_security,
@@ -632,8 +620,6 @@ fn snapshot(folder: &ITaskFolder, id: &StartupIdentity) -> Result<StartupTaskSna
     logon_security,
     user_compat: read_compat(HKEY_CURRENT_USER, &id.exe_path)?,
     machine_compat: read_compat(HKEY_LOCAL_MACHINE, &id.exe_path)?,
-    legacy_xml,
-    legacy_security,
   })
 }
 
@@ -693,19 +679,6 @@ fn restore(folder: &ITaskFolder, id: &StartupIdentity, before: &StartupTaskSnaps
     &id.exe_path,
     before.machine_compat.as_deref(),
   )?;
-  if let Some(xml) = &before.legacy_xml {
-    unsafe {
-      folder.RegisterTask(
-        &BSTR::from(format!("Vnite-AutoStart-{}", id.sid)),
-        &BSTR::from(xml.as_str()),
-        TASK_CREATE_OR_UPDATE.0 | TASK_DONT_ADD_PRINCIPAL_ACE.0,
-        &VARIANT::from(id.sid.as_str()),
-        &VARIANT::default(),
-        TASK_LOGON_INTERACTIVE_TOKEN,
-        &VARIANT::from(before.legacy_security.as_deref().unwrap_or("")),
-      )?;
-    }
-  }
   Ok(())
 }
 
@@ -835,9 +808,6 @@ pub async fn configure_startup_tasks(
           return Err(invalid("startup task removal failed verification"));
         }
       }
-      if before.legacy_xml.is_some() {
-        delete(&folder, &format!("Vnite-AutoStart-{}", id.sid))?;
-      }
       Ok(())
     })();
     if let Err(error) = changed {
@@ -957,9 +927,8 @@ pub async fn remove_installation_startup_tasks() -> napi::Result<()> {
       for i in 1..=tasks.Count()? {
         let task = tasks.get_Item(&VARIANT::from(i))?;
         let name = task.Name()?.to_string();
-        if ((name.starts_with("Vnite-Launch-") || name.starts_with("Vnite-Logon-"))
-          && name.ends_with(&format!("-{}", id.installation_id)))
-          || name.starts_with("Vnite-AutoStart-")
+        if (name.starts_with("Vnite-Launch-") || name.starts_with("Vnite-Logon-"))
+          && name.ends_with(&format!("-{}", id.installation_id))
         {
           let fields = xml_values(&task.Xml()?.to_string())?;
           if fields

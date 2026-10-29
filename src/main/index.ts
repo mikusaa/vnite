@@ -204,231 +204,230 @@ protocol.registerSchemesAsPrivileged([
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app
-  .whenReady()
-  .then(async () => {
-    electronApp.setAppUserModelId('vnite')
-    if (await bootstrapStartup(process.argv)) {
-      app.exit(Number(process.exitCode ?? 0))
-      return
-    }
+async function initializeApplication(): Promise<void> {
+  electronApp.setAppUserModelId('vnite')
+  if (await bootstrapStartup(process.argv)) {
+    app.exit(Number(process.exitCode ?? 0))
+    return
+  }
 
-    // Set app user model id for windows
-    electronApp.setAppUserModelId('vnite')
+  // Default open or close DevTools by F12 in development
+  // and ignore CommandOrControl + R in production.
+  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
+  })
 
-    // Default open or close DevTools by F12 in development
-    // and ignore CommandOrControl + R in production.
-    // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-    app.on('browser-window-created', (_, window) => {
-      optimizer.watchWindowShortcuts(window)
-    })
+  // IPC test
+  ipcMain.on('ping', () => console.log('pong'))
 
-    // IPC test
-    ipcMain.on('ping', () => console.log('pong'))
+  // Set the userData directory to a different location in development
+  if (!app.isPackaged) {
+    app.setPath('userData', join(getAppRootPath(), 'dev'))
+  }
 
-    // Set the userData directory to a different location in development
-    if (!app.isPackaged) {
-      app.setPath('userData', join(getAppRootPath(), 'dev'))
-    }
+  log.transports.file.resolvePathFn = (): string => getLogsPath()
 
-    log.transports.file.resolvePathFn = (): string => getLogsPath()
+  log.info('[App] App is starting...')
+  log.info(`[App] System: ${process.platform} ${process.arch}`)
 
-    log.info('[App] App is starting...')
-    log.info(`[App] System: ${process.platform} ${process.arch}`)
+  await checkPortableMode()
 
-    await checkPortableMode()
-
-    // Check if the app is running in portable mode
-    if (portableStore.isPortableMode) {
-      if (await checkAdminPermissions()) {
-        log.info('[App] Running in portable mode with admin permissions')
-      } else {
-        if (await checkIfDirectoryNeedsAdminRights(getDataPath())) {
-          dialog.showErrorBox(
-            'Vnite',
-            'The portable data directory is not writable. Open Vnite as administrator to configure administrator startup, or restore write access to the existing data directory.'
-          )
-          app.exit(1)
-          return
-        } else {
-          log.info('[App] Running in portable mode without admin permissions')
-        }
-      }
+  // Check if the app is running in portable mode
+  if (portableStore.isPortableMode) {
+    if (await checkAdminPermissions()) {
+      log.info('[App] Running in portable mode with admin permissions')
     } else {
-      if (await checkAdminPermissions()) {
-        log.info('[App] Running in normal mode with admin permissions')
+      if (await checkIfDirectoryNeedsAdminRights(getDataPath())) {
+        dialog.showErrorBox(
+          'Vnite',
+          'The portable data directory is not writable. Open Vnite as administrator to configure administrator startup, or restore write access to the existing data directory.'
+        )
+        app.exit(1)
+        return
       } else {
-        log.info('[App] Running in normal mode without admin permissions')
+        log.info('[App] Running in portable mode without admin permissions')
       }
     }
+  } else {
+    if (await checkAdminPermissions()) {
+      log.info('[App] Running in normal mode with admin permissions')
+    } else {
+      log.info('[App] Running in normal mode without admin permissions')
+    }
+  }
 
-    const gotTheLock = app.requestSingleInstanceLock()
+  const gotTheLock = app.requestSingleInstanceLock()
 
-    if (!gotTheLock) {
-      // If it's not the first instance, just exit
-      app.quit()
+  if (!gotTheLock) {
+    // If it's not the first instance, just exit
+    app.quit()
+    return
+  }
+
+  // Handling the startup of the second instance
+  app.on('second-instance', (_event, commandLine) => {
+    if (commandLine.some((argument) => argument.startsWith('--vnite-admin-request='))) {
+      void acceptStartupArguments(commandLine).catch((error) => {
+        log.error('[AutoStart] Failed to accept launch request:', error)
+      })
       return
     }
-
-    // Handling the startup of the second instance
-    app.on('second-instance', (_event, commandLine) => {
-      if (commandLine.some((argument) => argument.startsWith('--vnite-admin-request='))) {
-        void acceptStartupArguments(commandLine).catch((error) => {
-          log.error('[AutoStart] Failed to accept launch request:', error)
-        })
-        return
+    // If the main window exists, activate it
+    if (mainWindow && !commandLine.includes('--hidden')) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore()
       }
-      // If the main window exists, activate it
-      if (mainWindow && !commandLine.includes('--hidden')) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore()
-        }
-        mainWindow.focus()
+      mainWindow.focus()
 
-        if (!mainWindow.isVisible()) {
-          mainWindow.show()
-        }
-
-        // Temporary placement to draw attention to
-        mainWindow.setAlwaysOnTop(true)
-        setTimeout(() => {
-          mainWindow.setAlwaysOnTop(false)
-        }, 300)
+      if (!mainWindow.isVisible()) {
+        mainWindow.show()
       }
 
-      // Check for protocol URLs
-      const gameId = findGameId(commandLine)
-      if (gameId) {
-        // Processing Protocol URL
-        enqueueGameLaunch(gameId)
-      }
-      // Check for auth callback URLs specifically
-      const authUrl = commandLine.find((arg) => arg.startsWith('vnite://auth/callback'))
-      if (authUrl) {
-        // Processing auth callback URL
-        handleAuthCallback(authUrl)
-      }
-    })
-
-    setupProtocols()
-
-    // Setup scraper providers
-    setupScraper()
-
-    baseDBManager.initAllDatabases()
-    await runDatabaseMigrations(app.getVersion())
-    await setupAutoStart()
-
-    // Setup proxy config
-    await setupProxy()
-
-    setupIPC()
-
-    setStartupRuntime({
-      isBusy: () =>
-        hasActiveGameMonitors() ||
-        hasPendingGameSaveOperations() ||
-        isDatabaseOperationRunning() ||
-        syncInitializing ||
-        GameScannerManager.getScanProgress().status === 'scanning',
-      restart: restartApplication,
-      deliver: async (request) => {
-        if (request.showWindow && mainWindow && !mainWindow.isDestroyed()) {
-          if (mainWindow.isMinimized()) mainWindow.restore()
-          mainWindow.show()
-          mainWindow.focus()
-        }
-        for (const url of request.urls ?? []) {
-          const gameId = parseGameIdFromUrl(url)
-          if (gameId) enqueueGameLaunch(gameId)
-          else if (url.startsWith('vnite://auth/callback')) await handleAuthCallback(url)
-        }
-      }
-    })
-
-    ipcManager.on('db:games-loaded', (event) => {
-      if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-        return
-      }
-
-      const isFirstLoad = !gamesLoaded
-      gamesLoaded = true
-      drainPendingGameLaunches()
-
-      if (!isFirstLoad) {
-        return
-      }
-
-      log.info('[App] Games DB loaded, starting scanner...')
-      GameScannerManager.startScan().catch((err) => {
-        log.error('[Scanner] Startup scan failed:', err)
-      })
-      GameScannerManager.startPeriodicScan()
-    })
-
-    createWindow()
-
-    try {
-      AuthManager.init()
-    } catch (error) {
-      log.error('[Account] Failed to initialize AuthManager:', error)
+      // Temporary placement to draw attention to
+      mainWindow.setAlwaysOnTop(true)
+      setTimeout(() => {
+        mainWindow.setAlwaysOnTop(false)
+      }, 300)
     }
 
-    try {
-      AuthManager.updateUserInfo()
-    } catch (_error) {
-      ipcManager.send('account:update-user-info-error')
+    // Check for protocol URLs
+    const gameId = findGameId(commandLine)
+    if (gameId) {
+      // Processing Protocol URL
+      enqueueGameLaunch(gameId)
     }
-
-    await initI18n()
-
-    // Setup context menu
-    await setupContextMenu()
-
-    // Setup tray
-    trayManager = await setupTray(mainWindow)
-
-    // Setup temporary directory
-    await setupTempDirectory()
-
-    // Sync all databases with remote
-    syncInitializing = true
-    void startSync().finally(() => {
-      syncInitializing = false
-    })
-
-    // Setup auto updater
-    setupAutoUpdater()
-
-    // Note: Scanner will be started after games are loaded (see db:games-loaded handler above)
-
-    await pluginService.initialize()
-
-    // Setup screenshot service
-    await setupScreenshotService()
-
-    // Setup native module
-    let monitorError: string | undefined
-    try {
-      await setupNativeModule()
-    } catch (error) {
-      monitorError = `Game monitoring could not be initialized: ${error instanceof Error ? error.message : String(error)}`
-      log.error('[Native]', monitorError)
-    }
-
-    app.on('activate', function () {
-      // On macOS it's common to re-create a window in the app when the
-      // dock icon is clicked and there are no other windows open.
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    })
-
-    void primeGoogleImageSearchSession()
-    await windowReady
-    await markStartupReady(monitorError)
-    if (monitorError && !process.argv.some((arg) => arg.startsWith('--vnite-admin-request='))) {
-      dialog.showErrorBox('Vnite monitoring', monitorError)
+    // Check for auth callback URLs specifically
+    const authUrl = commandLine.find((arg) => arg.startsWith('vnite://auth/callback'))
+    if (authUrl) {
+      // Processing auth callback URL
+      handleAuthCallback(authUrl)
     }
   })
+
+  setupProtocols()
+
+  // Setup scraper providers
+  setupScraper()
+
+  baseDBManager.initAllDatabases()
+  await runDatabaseMigrations(app.getVersion())
+  await setupAutoStart()
+
+  // Setup proxy config
+  await setupProxy()
+
+  setupIPC()
+
+  setStartupRuntime({
+    isBusy: () =>
+      hasActiveGameMonitors() ||
+      hasPendingGameSaveOperations() ||
+      isDatabaseOperationRunning() ||
+      syncInitializing ||
+      GameScannerManager.getScanProgress().status === 'scanning',
+    restart: restartApplication,
+    deliver: async (request) => {
+      if (request.showWindow && mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      }
+      for (const url of request.urls ?? []) {
+        const gameId = parseGameIdFromUrl(url)
+        if (gameId) enqueueGameLaunch(gameId)
+        else if (url.startsWith('vnite://auth/callback')) await handleAuthCallback(url)
+      }
+    }
+  })
+
+  ipcManager.on('db:games-loaded', (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+      return
+    }
+
+    const isFirstLoad = !gamesLoaded
+    gamesLoaded = true
+    drainPendingGameLaunches()
+
+    if (!isFirstLoad) {
+      return
+    }
+
+    log.info('[App] Games DB loaded, starting scanner...')
+    GameScannerManager.startScan().catch((err) => {
+      log.error('[Scanner] Startup scan failed:', err)
+    })
+    GameScannerManager.startPeriodicScan()
+  })
+
+  createWindow()
+
+  try {
+    AuthManager.init()
+  } catch (error) {
+    log.error('[Account] Failed to initialize AuthManager:', error)
+  }
+
+  try {
+    AuthManager.updateUserInfo()
+  } catch (_error) {
+    ipcManager.send('account:update-user-info-error')
+  }
+
+  await initI18n()
+
+  // Setup context menu
+  await setupContextMenu()
+
+  // Setup tray
+  trayManager = await setupTray(mainWindow)
+
+  // Setup temporary directory
+  await setupTempDirectory()
+
+  // Sync all databases with remote
+  syncInitializing = true
+  void startSync().finally(() => {
+    syncInitializing = false
+  })
+
+  // Setup auto updater
+  setupAutoUpdater()
+
+  // Note: Scanner will be started after games are loaded (see db:games-loaded handler above)
+
+  await pluginService.initialize()
+
+  // Setup screenshot service
+  await setupScreenshotService()
+
+  // Setup native module
+  let monitorError: string | undefined
+  try {
+    await setupNativeModule()
+  } catch (error) {
+    monitorError = `Game monitoring could not be initialized: ${error instanceof Error ? error.message : String(error)}`
+    log.error('[Native]', monitorError)
+  }
+
+  app.on('activate', function () {
+    // On macOS it's common to re-create a window in the app when the
+    // dock icon is clicked and there are no other windows open.
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  void primeGoogleImageSearchSession()
+  await windowReady
+  await markStartupReady(monitorError)
+  if (monitorError && !process.argv.some((arg) => arg.startsWith('--vnite-admin-request='))) {
+    dialog.showErrorBox('Vnite monitoring', monitorError)
+  }
+}
+
+app
+  .whenReady()
+  .then(initializeApplication)
   .catch((error) => {
     log.error('[App] Startup failed:', error)
     dialog.showErrorBox('Vnite startup', error instanceof Error ? error.message : String(error))

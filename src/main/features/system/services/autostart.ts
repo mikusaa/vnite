@@ -439,22 +439,11 @@ export async function setupAutoStart(): Promise<void> {
   if (process.platform !== 'win32' || !app.isPackaged) return
   const { identity, store } = await context()
   if (await store.readSettings()) return
-  // The legacy synced values are read once, after the normal DB initialization.
+  // Migrate the existing login preference once. Administrator authorization is
+  // local to this installation and is only granted through an explicit setting.
   const { ConfigDBManager } = await import('~/core/database')
   const openAtLogin = await ConfigDBManager.getConfigValue('general.openAtLogin')
-  const elevated = await ConfigDBManager.getConfigValue('general.openAtLoginElevated')
-  if (elevated && identity.elevated) {
-    await applyConfiguration({ openAtLogin, runAsAdmin: true }, false)
-  } else {
-    await store.saveSettings({
-      ...defaults(identity),
-      openAtLogin,
-      // A legacy preference is not proof that the new tasks were authorized.
-      lastError: elevated
-        ? 'Administrator startup needs to be configured for this installation.'
-        : undefined
-    })
-  }
+  await store.saveSettings({ ...defaults(identity), openAtLogin })
 }
 
 export function isProcessElevated(): boolean {

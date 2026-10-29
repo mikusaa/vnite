@@ -35,7 +35,6 @@ export interface configDocs {
   general: {
     /** Legacy startup preferences; read once into the local startup state. */
     openAtLogin: boolean
-    openAtLoginElevated: boolean
     quitToTray: boolean
     language: string
     hideWindowAfterGameStart: boolean
@@ -370,7 +369,6 @@ export interface configLocalDocs {
 export const DEFAULT_CONFIG_VALUES: Readonly<configDocs> = {
   general: {
     openAtLogin: false,
-    openAtLoginElevated: false,
     quitToTray: false,
     language: '',
     hideWindowAfterGameStart: true,

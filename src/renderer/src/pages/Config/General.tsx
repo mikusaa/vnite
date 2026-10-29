@@ -140,7 +140,7 @@ export function General(): React.JSX.Element {
         <div className={cn('space-y-4')}>
           {/* Open at login */}
           <div className={cn('space-y-4')}>
-            <div className={cn('border-b pb-2')}>{t('general.autoStartTitle')}</div>
+            <div className={cn('border-b pb-2')}>{t('general.startupTitle')}</div>
 
             <ConfigItemPure
               title={t('general.openAtLogin')}
@@ -157,8 +157,8 @@ export function General(): React.JSX.Element {
             </ConfigItemPure>
 
             <ConfigItemPure
-              title={t('general.openAtLoginElevated')}
-              description={t('general.openAtLoginElevatedDescription')}
+              title={t('general.runAsAdmin')}
+              description={t('general.runAsAdminDescription')}
               disabled={autoStartPending || !isWindows || !autoStartStatus}
             >
               <Switch

@@ -28,6 +28,8 @@ async function coordinator(t, elevated = false) {
   const store = new StartupStore(directory, identity.sid, identity.exePath)
   const calls = []
   const timers = []
+  const legacyReads = []
+  let legacyOpenAtLogin = false
   let loginItem = false
   let tasks = { launch: 'absent', logon: 'absent', runAsAdminFlag: false }
   const native = {
@@ -105,6 +107,17 @@ async function coordinator(t, elevated = false) {
       if (name === 'electron') return electron
       if (name === 'electron-log/main') return { info() {}, warn() {}, error() {} }
       if (name === 'vnite-native') return native
+      if (name === '~/core/database') {
+        return {
+          ConfigDBManager: {
+            getConfigValue: async (key) => {
+              assert.equal(key, 'general.openAtLogin')
+              legacyReads.push(key)
+              return legacyOpenAtLogin
+            }
+          }
+        }
+      }
       if (name === './startupState')
         return { StartupStore, REQUEST_ID, validateOptions, validateStartupUrl }
       throw new Error(`Unexpected import: ${name}`)
@@ -118,11 +131,47 @@ async function coordinator(t, elevated = false) {
     identity,
     calls,
     timers,
+    legacyReads,
+    setLegacyOpenAtLogin: (value) => {
+      legacyOpenAtLogin = value
+    },
     setTasks: (value) => {
       tasks = value
     }
   }
 }
+
+test('legacy login preference migrates once without granting administrator mode', async (t) => {
+  const f = await coordinator(t)
+  f.setLegacyOpenAtLogin(true)
+  await f.api.setupAutoStart()
+  const settings = await f.store.readSettings()
+  assert.equal(settings.openAtLogin, true)
+  assert.equal(settings.runAsAdmin, false)
+  assert.equal(f.calls.length, 0)
+  f.setLegacyOpenAtLogin(false)
+  await f.api.setupAutoStart()
+  assert.equal((await f.store.readSettings()).openAtLogin, true)
+  assert.equal(f.legacyReads.length, 1)
+})
+
+test('existing local administrator settings are preserved during startup migration', async (t) => {
+  const f = await coordinator(t)
+  await f.store.saveSettings({
+    version: 1,
+    sid: f.identity.sid,
+    exePath: f.identity.exePath,
+    openAtLogin: false,
+    runAsAdmin: true,
+    restartPending: false
+  })
+  f.setLegacyOpenAtLogin(true)
+  await f.api.setupAutoStart()
+  assert.equal((await f.store.readSettings()).openAtLogin, false)
+  assert.equal((await f.store.readSettings()).runAsAdmin, true)
+  assert.equal(f.legacyReads.length, 0)
+  assert.equal(f.calls.length, 0)
+})
 
 test('UAC cancellation leaves the existing startup preference intact', async (t) => {
   const f = await coordinator(t)
