@@ -14,9 +14,9 @@ use windows::{
         ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         SDDL_REVISION_1,
       },
-      GetAce, GetSecurityDescriptorDacl, GetTokenInformation, SetFileSecurityW, TokenSessionId,
-      TokenUser, ACCESS_ALLOWED_ACE, ACL, LABEL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
-      TOKEN_QUERY, TOKEN_USER,
+      GetAce, GetSecurityDescriptorDacl, GetTokenInformation, LookupAccountNameW, SetFileSecurityW,
+      TokenSessionId, TokenUser, ACCESS_ALLOWED_ACE, ACL, LABEL_SECURITY_INFORMATION,
+      PSECURITY_DESCRIPTOR, PSID, SID_NAME_USE, TOKEN_QUERY, TOKEN_USER,
     },
     Storage::FileSystem::{FILE_GENERIC_EXECUTE, FILE_GENERIC_READ},
     System::{
@@ -316,14 +316,80 @@ fn xml_values(xml: &str) -> Result<BTreeMap<String, String>> {
   Ok(values)
 }
 
+fn same_account(value: &str, expected_sid: &str) -> Result<bool> {
+  if value.eq_ignore_ascii_case(expected_sid) {
+    return Ok(true);
+  }
+  if value.is_empty() || value.starts_with("S-1-") {
+    return Ok(false);
+  }
+  // Task Scheduler can serialize an account name even when registration used
+  // its SID. Resolve it instead of comparing the two display representations.
+  unsafe {
+    let name: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
+    let mut sid_size = 0;
+    let mut domain_size = 0;
+    let mut usage = SID_NAME_USE::default();
+    let result = LookupAccountNameW(
+      None,
+      PCWSTR(name.as_ptr()),
+      None,
+      &mut sid_size,
+      None,
+      &mut domain_size,
+      &mut usage,
+    );
+    if sid_size == 0 {
+      return match result {
+        Err(error) if error.code() == HRESULT::from_win32(1332) => Ok(false),
+        Err(error) => Err(error),
+        Ok(()) => Ok(false),
+      };
+    }
+    let mut sid = vec![0u8; sid_size as usize];
+    let mut domain = vec![0u16; domain_size as usize];
+    LookupAccountNameW(
+      None,
+      PCWSTR(name.as_ptr()),
+      Some(PSID(sid.as_mut_ptr().cast())),
+      &mut sid_size,
+      Some(PWSTR(domain.as_mut_ptr())),
+      &mut domain_size,
+      &mut usage,
+    )?;
+    let mut text = PWSTR::null();
+    ConvertSidToStringSidW(PSID(sid.as_mut_ptr().cast()), &mut text)?;
+    let resolved = text.to_string().map_err(|e| invalid(e.to_string()));
+    LocalFree(Some(HLOCAL(text.0.cast())));
+    Ok(resolved?.eq_ignore_ascii_case(expected_sid))
+  }
+}
+
+fn task_xml_default(key: &str) -> Option<&'static str> {
+  // Task Scheduler omits these elements when their schema default is true.
+  // Missing security-, action- and battery-related fields must still fail.
+  match key {
+    "Task/Settings/Enabled"
+    | "Task/Settings/AllowStartOnDemand"
+    | "Task/Triggers/LogonTrigger/Enabled" => Some("true"),
+    _ => None,
+  }
+}
+
 fn validate_task(xml: &str, id: &StartupIdentity, logon: bool, enabled: bool) -> Result<String> {
   let actual = xml_values(xml)?;
   let expected = xml_values(&task_xml(id, logon, enabled))?;
-  let get = |key: &str| actual.get(key).map(String::as_str).unwrap_or("");
+  let get = |key: &str| {
+    actual
+      .get(key)
+      .map(String::as_str)
+      .or_else(|| task_xml_default(key))
+      .unwrap_or("")
+  };
   if normalize_path(get("Task/Actions/Exec/Command")) != normalize_path(&id.exe_path) {
     return Ok("stale-path".into());
   }
-  if get("Task/Principals/Principal/UserId") != id.sid {
+  if !same_account(get("Task/Principals/Principal/UserId"), &id.sid)? {
     return Ok("wrong-principal".into());
   }
   if get("Task/Principals/Principal/LogonType") != "InteractiveToken" {
@@ -336,7 +402,9 @@ fn validate_task(xml: &str, id: &StartupIdentity, logon: bool, enabled: bool) ->
     if key.starts_with("Task/RegistrationInfo/") {
       continue;
     }
-    let matches = if key.ends_with("/Command") || key.ends_with("/WorkingDirectory") {
+    let matches = if key.ends_with("/UserId") {
+      same_account(get(&key), &id.sid)?
+    } else if key.ends_with("/Command") || key.ends_with("/WorkingDirectory") {
       normalize_path(get(&key)) == normalize_path(&value)
     } else {
       get(&key) == value
@@ -932,7 +1000,12 @@ fn task_diagnostics(
     let differences: Vec<_> = expected
       .iter()
       .filter(|(key, value)| {
-        !key.starts_with("Task/RegistrationInfo/") && actual.get(*key) != Some(*value)
+        !key.starts_with("Task/RegistrationInfo/")
+          && actual
+            .get(*key)
+            .map(String::as_str)
+            .or_else(|| task_xml_default(key))
+            != Some(value.as_str())
       })
       .map(|(key, value)| format!("{key}: expected={value:?}, actual={:?}", actual.get(key)))
       .collect();
@@ -989,6 +1062,37 @@ mod tests {
     assert_eq!(
       validate_task(&task_xml(&id, true, false), &id, true, false).unwrap(),
       "ok"
+    );
+  }
+  #[test]
+  fn task_validation_accepts_windows_omitted_defaults() {
+    let id = test_identity();
+    for (logon, enabled) in [(false, true), (true, true), (true, false)] {
+      let xml = task_xml(&id, logon, enabled)
+        .replace("<Enabled>true</Enabled>", "")
+        .replace("<AllowStartOnDemand>true</AllowStartOnDemand>", "");
+      assert_eq!(validate_task(&xml, &id, logon, enabled).unwrap(), "ok");
+    }
+    let xml = task_xml(&id, false, true).replace(
+      "<AllowStartOnDemand>true</AllowStartOnDemand>",
+      "<AllowStartOnDemand>false</AllowStartOnDemand>",
+    );
+    assert_eq!(
+      validate_task(&xml, &id, false, true).unwrap(),
+      "invalid-settings"
+    );
+    let xml = task_xml(&id, true, false).replace("<Enabled>false</Enabled>", "");
+    assert_eq!(
+      validate_task(&xml, &id, true, false).unwrap(),
+      "invalid-settings"
+    );
+    let xml = task_xml(&id, false, true).replace(
+      "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
+      "",
+    );
+    assert_eq!(
+      validate_task(&xml, &id, false, true).unwrap(),
+      "invalid-settings"
     );
   }
   #[test]
